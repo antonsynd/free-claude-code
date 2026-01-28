@@ -1,8 +1,13 @@
 """
-Anthropic API Proxy - Barebones NVIDIA NIM Implementation
+Claude Code Proxy - NVIDIA NIM Implementation
 
-This server acts as a proxy between Anthropic API requests and NVIDIA NIM,
-using direct httpx calls without any external LLM libraries.
+This server acts as a robust proxy between Anthropic API requests and NVIDIA NIM,
+enabling Claude Code CLI to utilize NIM models with full support for:
+- Streaming with SSE (Server-Sent Events)
+- Thinking/Reasoning blocks and Reasoning-Split mode
+- Native and heuristic tool use parsing
+- Automatic model mapping (Haiku/Sonnet/Opus to NIM equivalents)
+- Fast prefix detection for CLI policy specifications
 """
 
 from fastapi import FastAPI, Request, HTTPException
