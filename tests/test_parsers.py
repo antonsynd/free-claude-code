@@ -71,3 +71,57 @@ def test_heuristic_tool_parser_flush():
     assert len(tools) == 1
     assert tools[0]["name"] == "Bash"
     assert tools[0]["input"] == {"command": "ls -la"}
+
+
+def test_interleaved_thinking_and_tools():
+    parser_think = ThinkTagParser()
+    parser_tool = HeuristicToolParser()
+
+    text = "<think>I need to search for a file.</think> ● <function=Grep><parameter=pattern>test</parameter>"
+
+    # 1. Parse thinking
+    chunks = list(parser_think.feed(text))
+    thinking = [c for c in chunks if c.type == ContentType.THINKING]
+    text_remaining = "".join([c.content for c in chunks if c.type == ContentType.TEXT])
+
+    assert len(thinking) == 1
+    assert thinking[0].content == "I need to search for a file."
+
+    # 2. Parse tool from remaining text
+    filtered, tools = parser_tool.feed(text_remaining)
+    tools += parser_tool.flush()
+
+    assert len(tools) == 1
+    assert tools[0]["name"] == "Grep"
+    assert tools[0]["input"] == {"pattern": "test"}
+
+
+def test_partial_interleaved_streaming():
+    parser_think = ThinkTagParser()
+    parser_tool = HeuristicToolParser()
+
+    # Chunk 1: Partial thinking (it emits since it's definitely not the start of <think>)
+    chunks1 = list(parser_think.feed("<think>Part 1"))
+    assert len(chunks1) == 1
+    assert chunks1[0].type == ContentType.THINKING
+    assert chunks1[0].content == "Part 1"
+
+    # Chunk 2: Thinking ends, tool starts
+    chunks2 = list(parser_think.feed(" ends</think> ● <func"))
+    assert len(chunks2) == 2
+    assert chunks2[0].type == ContentType.THINKING
+    assert chunks2[0].content == " ends"
+
+    text_rem = chunks2[1].content
+    filtered, tools = parser_tool.feed(text_rem)
+    assert tools == []
+
+    # Chunk 3: Tool ends
+    chunks3 = list(parser_think.feed("tion=Read><parameter=path>test.py</parameter>"))
+    text_rem3 = "".join([c.content for c in chunks3])
+    filtered3, tools3 = parser_tool.feed(text_rem3)
+    tools3 += parser_tool.flush()
+
+    assert len(tools3) == 1
+    assert tools3[0]["name"] == "Read"
+    assert tools3[0]["input"] == {"path": "test.py"}

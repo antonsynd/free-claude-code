@@ -15,7 +15,7 @@ import json
 import logging
 import uuid
 from typing import List, Dict, Any, Optional, Union, Literal
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, field_validator, model_validator
 from providers.nvidia_nim import NvidiaNimProvider, ProviderConfig
 from providers.exceptions import ProviderError
 import uvicorn
@@ -124,30 +124,26 @@ class MessagesRequest(BaseModel):
     extra_body: Optional[Dict[str, Any]] = None
     original_model: Optional[str] = None
 
-    @field_validator("model")
-    @classmethod
-    def validate_model_field(cls, v, info):
-        original_model = v
-        clean_v = v
+    @model_validator(mode="after")
+    def map_model(self) -> "MessagesRequest":
+        if self.original_model is None:
+            self.original_model = self.model
+
+        clean_v = self.model
         for prefix in ["anthropic/", "openai/", "gemini/"]:
             if clean_v.startswith(prefix):
                 clean_v = clean_v[len(prefix) :]
                 break
 
         if "haiku" in clean_v.lower():
-            new_model = SMALL_MODEL
+            self.model = SMALL_MODEL
         elif "sonnet" in clean_v.lower() or "opus" in clean_v.lower():
-            new_model = BIG_MODEL
-        else:
-            new_model = v
+            self.model = BIG_MODEL
 
-        if new_model != original_model:
-            logger.debug(f"MODEL MAPPING: '{original_model}' -> '{new_model}'")
+        if self.model != self.original_model:
+            logger.debug(f"MODEL MAPPING: '{self.original_model}' -> '{self.model}'")
 
-        if isinstance(info.data, dict):
-            info.data["original_model"] = original_model
-
-        return new_model
+        return self
 
 
 class TokenCountRequest(BaseModel):
@@ -464,6 +460,9 @@ async def create_message(
             response_json = await provider.complete(request_data)
             return provider.convert_response(response_json, request_data)
 
+    except ProviderError:
+        # Re-raise ProviderError to be handled by the specialized exception handler
+        raise
     except Exception as e:
         import traceback
 
